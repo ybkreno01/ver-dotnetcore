@@ -5,19 +5,109 @@ jobs:
     runs-on: ubuntu-latest
     name: Run Veracode DAST Essentials Scan
 
-    env:
-      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
-
     steps:
-      - name: Veracode Action Step
-        id: Veracode
-        uses: veracode/veracode-dast-essentials-action@v1.0.2
-        with:
-          VERACODE_WEBHOOK: '4d31fead-41ef-44ee-8ac4-5fb361af55ab'
-          VERACODE_SECRET_ID: '${{ secrets.VERACODE_SECRET_ID }}'
-          VERACODE_SECRET_ID_KEY: '${{ secrets.VERACODE_SECRET_ID_KEY }}'
-          REGION: 'us'
-          pull-report: 'true'
+      - name: Start Veracode DAST Essentials Scan
+        shell: bash
+        env:
+          WEBHOOK: '4d31fead-41ef-44ee-8ac4-5fb361af55ab'
+          API_ID: ${{ secrets.VERACODE_SECRET_ID }}
+          API_SECRET: ${{ secrets.VERACODE_SECRET_ID_KEY }}
+          API_ENDPOINT: api.veracode.com
+          API_PATH: /dae/api/core-api/webhook
+        run: |
+          set -euo pipefail
+
+          generate_hmac_header() {
+            local signing_data="$1"
+            local auth_schema="VERACODE-HMAC-SHA-256"
+            local api_version="vcode_request_version_1"
+            local nonce
+            local timestamp
+            local nonce_key
+            local time_key
+            local sig_key
+            local signature
+
+            nonce="$(openssl rand -hex 16)"
+            timestamp="$(date +%s)000"
+
+            nonce_key="$(echo "$nonce" | xxd -r -p | openssl dgst -sha256 -mac HMAC -macopt hexkey:"$API_SECRET" | awk -F" " '{ print $2 }')"
+            time_key="$(echo -n "$timestamp" | openssl dgst -sha256 -mac HMAC -macopt hexkey:"$nonce_key" | awk -F" " '{ print $2 }')"
+            sig_key="$(echo -n "$api_version" | openssl dgst -sha256 -mac HMAC -macopt hexkey:"$time_key" | awk -F" " '{ print $2 }')"
+            signature="$(echo -n "$signing_data" | openssl dgst -sha256 -mac HMAC -macopt hexkey:"$sig_key" | awk -F" " '{ print $2 }')"
+
+            echo "$auth_schema id=$API_ID,ts=$timestamp,nonce=$nonce,sig=$signature"
+          }
+
+          signing_data="id=$API_ID&host=$API_ENDPOINT&url=$API_PATH/$WEBHOOK&method=POST"
+          auth_header="$(generate_hmac_header "$signing_data")"
+
+          response="$(curl --silent --show-error --fail-with-body \
+            -X POST \
+            -H "Authorization: $auth_header" \
+            --data "" \
+            "https://$API_ENDPOINT$API_PATH/$WEBHOOK")"
+
+          echo "$response" | jq .
+          echo "$response" | jq -r '.data.scanId' > scan_id.txt
+
+      - name: Wait and download Veracode DAST JUnit report
+        shell: bash
+        env:
+          WEBHOOK: '4d31fead-41ef-44ee-8ac4-5fb361af55ab'
+          API_ID: ${{ secrets.VERACODE_SECRET_ID }}
+          API_SECRET: ${{ secrets.VERACODE_SECRET_ID_KEY }}
+          API_ENDPOINT: api.veracode.com
+          API_PATH: /dae/api/core-api/webhook
+        run: |
+          set -euo pipefail
+
+          generate_hmac_header() {
+            local signing_data="$1"
+            local auth_schema="VERACODE-HMAC-SHA-256"
+            local api_version="vcode_request_version_1"
+            local nonce
+            local timestamp
+            local nonce_key
+            local time_key
+            local sig_key
+            local signature
+
+            nonce="$(openssl rand -hex 16)"
+            timestamp="$(date +%s)000"
+
+            nonce_key="$(echo "$nonce" | xxd -r -p | openssl dgst -sha256 -mac HMAC -macopt hexkey:"$API_SECRET" | awk -F" " '{ print $2 }')"
+            time_key="$(echo -n "$timestamp" | openssl dgst -sha256 -mac HMAC -macopt hexkey:"$nonce_key" | awk -F" " '{ print $2 }')"
+            sig_key="$(echo -n "$api_version" | openssl dgst -sha256 -mac HMAC -macopt hexkey:"$time_key" | awk -F" " '{ print $2 }')"
+            signature="$(echo -n "$signing_data" | openssl dgst -sha256 -mac HMAC -macopt hexkey:"$sig_key" | awk -F" " '{ print $2 }')"
+
+            echo "$auth_schema id=$API_ID,ts=$timestamp,nonce=$nonce,sig=$signature"
+          }
+
+          scan_id="$(cat scan_id.txt)"
+          status=100
+
+          while [ "$status" -le 101 ]; do
+            echo "Scan status: $status. Waiting 60 seconds..."
+            sleep 60
+
+            signing_data="id=$API_ID&host=$API_ENDPOINT&url=$API_PATH/$WEBHOOK/scans/$scan_id/status&method=GET"
+            auth_header="$(generate_hmac_header "$signing_data")"
+
+            status_response="$(curl --silent --show-error --fail-with-body \
+              -H "Authorization: $auth_header" \
+              "https://$API_ENDPOINT$API_PATH/$WEBHOOK/scans/$scan_id/status")"
+
+            status="$(echo "$status_response" | jq -r '.data.status.status_code')"
+          done
+
+          signing_data="id=$API_ID&host=$API_ENDPOINT&url=$API_PATH/$WEBHOOK/scans/$scan_id/report/junit&method=GET"
+          auth_header="$(generate_hmac_header "$signing_data")"
+
+          curl --silent --show-error --fail-with-body \
+            -H "Authorization: $auth_header" \
+            "https://$API_ENDPOINT$API_PATH/$WEBHOOK/scans/$scan_id/report/junit" \
+            -o report.xml
 
       - name: Publish Test Report
         if: always() && hashFiles('report.xml') != ''
