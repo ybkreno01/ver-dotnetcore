@@ -10,8 +10,8 @@ jobs:
      uses: veracode/veracode-dast-essentials-action@v1.0.2
     with:
      VERACODE_WEBHOOK = 4d31fead-41ef-44ee-8ac4-5fb361af55ab
-     VERACODE_SECRET_ID = <secret_id>
-     VERACODE_SECRET_ID_KEY = <secret_id_key>
+     VERACODE_SECRET_ID = <secrets.VERACODE_API_ID>
+     VERACODE_SECRET_ID_KEY = <secrets.VERACODE_API_KEY>
      REGION = us
      pull-report: 'true'
     - name: Publish Test Report
