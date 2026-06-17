@@ -6,12 +6,32 @@ jobs:
     name: Run Veracode DAST Essentials Scan
 
     steps:
+      - name: Validate Veracode secrets
+        shell: bash
+        env:
+          API_ID: ${{ secrets.VERACODE_API_ID }}
+          API_SECRET: ${{ secrets.VERACODE_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${API_ID:-}" ]; then
+            echo "Missing GitHub secret: VERACODE_API_ID"
+            exit 1
+          fi
+
+          if [ -z "${API_SECRET:-}" ]; then
+            echo "Missing GitHub secret: VERACODE_API_KEY"
+            exit 1
+          fi
+
+          echo "Veracode secrets are present."
+
       - name: Start Veracode DAST Essentials Scan
         shell: bash
         env:
           WEBHOOK: '4d31fead-41ef-44ee-8ac4-5fb361af55ab'
-          API_ID: ${{ secrets.VERACODE_SECRET_ID }}
-          API_SECRET: ${{ secrets.VERACODE_SECRET_ID_KEY }}
+          API_ID: ${{ secrets.VERACODE_API_ID }}
+          API_SECRET: ${{ secrets.VERACODE_API_KEY }}
           API_ENDPOINT: api.veracode.com
           API_PATH: /dae/api/core-api/webhook
         run: |
@@ -21,12 +41,6 @@ jobs:
             local signing_data="$1"
             local auth_schema="VERACODE-HMAC-SHA-256"
             local api_version="vcode_request_version_1"
-            local nonce
-            local timestamp
-            local nonce_key
-            local time_key
-            local sig_key
-            local signature
 
             nonce="$(openssl rand -hex 16)"
             timestamp="$(date +%s)000"
@@ -55,8 +69,8 @@ jobs:
         shell: bash
         env:
           WEBHOOK: '4d31fead-41ef-44ee-8ac4-5fb361af55ab'
-          API_ID: ${{ secrets.VERACODE_SECRET_ID }}
-          API_SECRET: ${{ secrets.VERACODE_SECRET_ID_KEY }}
+          API_ID: ${{ secrets.VERACODE_API_ID }}
+          API_SECRET: ${{ secrets.VERACODE_API_KEY }}
           API_ENDPOINT: api.veracode.com
           API_PATH: /dae/api/core-api/webhook
         run: |
@@ -66,12 +80,6 @@ jobs:
             local signing_data="$1"
             local auth_schema="VERACODE-HMAC-SHA-256"
             local api_version="vcode_request_version_1"
-            local nonce
-            local timestamp
-            local nonce_key
-            local time_key
-            local sig_key
-            local signature
 
             nonce="$(openssl rand -hex 16)"
             timestamp="$(date +%s)000"
